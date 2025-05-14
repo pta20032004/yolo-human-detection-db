@@ -8,8 +8,7 @@ import numpy as np
 import cv2
 from .models import load_models, get_emotion_model_details
 from .config import EMOTION_LABELS
-import insightface
-from insightface.app import FaceAnalysis
+import tensorflow as tf
 
 class Detector:
     """Xử lý nhận diện người, khuôn mặt và cảm xúc / Detection handler"""
@@ -29,9 +28,29 @@ class Detector:
         self.emotion_height = self.emotion_input_shape[1]
         self.emotion_width = self.emotion_input_shape[2]
 
-        # Khởi tạo face analyzer từ InsightFace
-        self.face_analyzer = FaceAnalysis(name="buffalo_l")
-        self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+        # Khởi tạo MobileFaceNet model cho face embedding
+        self.face_embedding_interpreter = self._load_face_embedding_model()
+        self.face_embed_input_details = self.face_embedding_interpreter.get_input_details()
+        self.face_embed_output_details = self.face_embedding_interpreter.get_output_details()
+        
+        # Lấy input shape cho face embedding model
+        self.embed_input_shape = self.face_embed_input_details[0]['shape']
+        self.embed_height = self.embed_input_shape[1]
+        self.embed_width = self.embed_input_shape[2]
+    
+    def _load_face_embedding_model(self):
+        """
+        Tải mô hình MobileFaceNet TFLite cho face embedding
+        Load MobileFaceNet TFLite model for face embedding
+        
+        Returns:
+            tf.lite.Interpreter: TFLite interpreter cho face embedding
+        """
+        model_path = './models/mobilefacenet_float32.tflite'
+        interpreter = tf.lite.Interpreter(model_path=model_path)
+        interpreter.allocate_tensors()
+        print(f"Loaded MobileFaceNet model from {model_path}")
+        return interpreter
     
     def process_frame(self, frame):
         """
@@ -267,23 +286,76 @@ class Detector:
             face_img = cv2.resize(face_img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         return face_img
 
-    # Hàm tạo embedding từ ảnh
+    # Hàm tạo embedding từ ảnh sử dụng MobileFaceNet
     def get_embedding_from_image(self, img):
         """
-        Tạo embedding từ ảnh đã đọc.
+        Tạo embedding từ ảnh sử dụng MobileFaceNet TFLite.
         Args:
-            face_analyzer: Đối tượng phân tích khuôn mặt InsightFace.
-            img (np.ndarray): Ảnh dạng numpy array (BGR).
+            img (np.ndarray): Ảnh khuôn mặt dạng numpy array (BGR).
         Returns:
-            np.ndarray: Vector embedding hoặc None nếu không phát hiện khuôn mặt.
+            np.ndarray: Vector embedding hoặc None nếu không thành công.
         """
         try:
-            faces = self.face_analyzer.get(img)  # Sửa thành self.face_analyzer
-            if len(faces) == 0:
-                return None
-            best_face = max(faces, key=lambda x: x.det_score)
-            return best_face.embedding
+            # Tiền xử lý ảnh cho MobileFaceNet
+            face_preprocessed = self._preprocess_for_embedding(img)
+            
+            # Set input tensor
+            self.face_embedding_interpreter.set_tensor(
+                self.face_embed_input_details[0]['index'], 
+                face_preprocessed
+            )
+            
+            # Run inference
+            self.face_embedding_interpreter.invoke()
+            
+            # Get output tensor
+            embedding = self.face_embedding_interpreter.get_tensor(
+                self.face_embed_output_details[0]['index']
+            )
+            
+            # Flatten và normalize embedding
+            embedding = embedding.flatten()
+            embedding = self._normalize_embedding(embedding)
+            
+            return embedding
+            
         except Exception as e:
-            print(f"Lỗi khi tạo embedding: {e}")
+            print(f"Lỗi khi tạo embedding với MobileFaceNet: {e}")
             return None
-
+    
+    def _preprocess_for_embedding(self, face_img):
+        """
+        Tiền xử lý ảnh khuôn mặt cho MobileFaceNet.
+        Args:
+            face_img (np.ndarray): Ảnh khuôn mặt (BGR).
+        Returns:
+            np.ndarray: Ảnh đã tiền xử lý cho embedding model.
+        """
+        # Convert BGR to RGB
+        face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+        
+        # Resize to model input size (thường là 112x112)
+        face_resized = cv2.resize(face_rgb, (self.embed_width, self.embed_height))
+        
+        # Normalize to [0, 1] hoặc [-1, 1] tùy theo model
+        # Thường MobileFaceNet dùng [0, 1]
+        face_normalized = face_resized.astype(np.float32) / 255.0
+        
+        # Add batch dimension
+        face_batch = np.expand_dims(face_normalized, axis=0)
+        
+        return face_batch
+    
+    def _normalize_embedding(self, embedding):
+        """
+        Normalize embedding vector sử dụng L2 norm.
+        Args:
+            embedding (np.ndarray): Raw embedding vector.
+        Returns:
+            np.ndarray: L2 normalized embedding.
+        """
+        # L2 normalization for better cosine similarity
+        norm = np.linalg.norm(embedding)
+        if norm == 0:
+            return embedding
+        return embedding / norm
