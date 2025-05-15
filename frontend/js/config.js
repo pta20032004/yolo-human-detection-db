@@ -13,9 +13,14 @@ const config = {
     showFaces: true,
     showConfidence: true,
     showEmotions: true,  // Hiển thị cảm xúc / Show emotions
+    showRecognition: true,  // Hiển thị nhận diện / Show recognition
+    showSimilarityScore: true,  // Hiển thị similarity score
+    
     personColor: '#e74c3c',
     faceColor: '#2ecc71',
     emotionColor: '#ff9800',  // Màu mặc định cho cảm xúc / Default color for emotions
+    knownFaceColor: '#4ecdc4',  // Màu cho người quen / Color for known faces
+    unknownFaceColor: '#ff6b6b',  // Màu cho người lạ / Color for unknown faces
     
     // Màu sắc cho từng cảm xúc / Colors for different emotions
     emotionColors: {

@@ -339,8 +339,7 @@ class Detector:
         
         # Normalize to [0, 1] hoặc [-1, 1] tùy theo model
         # Thường MobileFaceNet dùng [0, 1]
-        face_normalized = face_resized.astype(np.float32) / 255.0
-        
+        face_normalized = (face_resized.astype(np.float32) / 127.5) - 1.0  # [-1, 1]        
         # Add batch dimension
         face_batch = np.expand_dims(face_normalized, axis=0)
         

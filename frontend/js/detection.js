@@ -138,7 +138,7 @@ export async function processFrame() {
 /**
  * Draw detection boxes for persons and faces
  * @param {Array} personBoxes - Person detection boxes
- * @param {Array} faceBoxes - Face detection boxes with emotion data
+ * @param {Array} faceBoxes - Face detection boxes with emotion and recognition data
  */
 export function drawDetections(personBoxes, faceBoxes) {
     // Only draw when application is running
@@ -158,7 +158,7 @@ export function drawDetections(personBoxes, faceBoxes) {
     const labelPadding = config.labelPadding || 6;
     const labelMargin = config.labelMargin || 8;
     const labelHeight = fontSize + labelPadding * 2;
-    const borderWidth = config.borderWidth || 4; // Độ dày của đường viền
+    const borderWidth = config.borderWidth || 4;
     
     // Draw person boxes if enabled
     if (config.showPersons && personBoxes && personBoxes.length > 0) {
@@ -194,50 +194,91 @@ export function drawDetections(personBoxes, faceBoxes) {
     
     // Draw face boxes if enabled
     if (config.showFaces && faceBoxes && faceBoxes.length > 0) {
-        faceBoxes.forEach(box => {
+        faceBoxes.forEach((box, index) => {
+            // Check if coords exist and are valid
+            if (!box.coords || box.coords.length < 4) {
+                console.error('Invalid coords:', box.coords);
+                return;
+            }
+            
             const [x1, y1, x2, y2] = box.coords;
             const width = x2 - x1;
             const height = y2 - y1;
             
+            // Determine box color - chỉ dựa vào known/unknown
+            let boxColor = config.faceColor; // Default green for faces
+            if (box.recognition) {
+                if (box.recognition.is_known && box.recognition.name && box.recognition.name !== 'Unknown') {
+                    boxColor = config.knownFaceColor || '#4ecdc4'; // Blue for known
+                } else {
+                    boxColor = config.unknownFaceColor || '#ff6b6b'; // Red for unknown
+                }
+            }
+            
             // Draw face box
-            ctx.strokeStyle = config.faceColor;
+            ctx.strokeStyle = boxColor;
             ctx.lineWidth = borderWidth;
             ctx.strokeRect(x1, y1, width, height);
             
-            // Compose label text
-            let labelParts = [];
-            if (config.showConfidence) {
-                labelParts.push(`Mặt ${box.confidence.toFixed(2)}`);
+            // Prepare labels
+            let nameLabel = '';
+            let emotionLabel = '';
+            
+            // Name label (hiển thị bên trái trên)
+            if (box.recognition) {
+                if (box.recognition.is_known && box.recognition.name && box.recognition.name !== 'Unknown') {
+                    nameLabel = box.recognition.name;
+                    if (config.showSimilarityScore && box.recognition.similarity) {
+                        nameLabel += ` (${Math.round(box.recognition.similarity * 100)}%)`;
+                    }
+                } else {
+                    nameLabel = 'Unknown';
+                }
+            } else if (config.showConfidence) {
+                nameLabel = `Face ${box.confidence.toFixed(2)}`;
             }
             
-            // Add emotion if enabled and available
+            // Emotion label with confidence (hiển thị bên phải trên)
             if (config.showEmotions && box.emotion) {
-                labelParts.push(box.emotion);
+                emotionLabel = box.emotion;
+                
+                // Thêm % confidence của emotion nếu có (từ emotion model)
+                emotionLabel += ' (100%)'; // Placeholder - có thể implement emotion confidence nếu cần
+            }
+            
+            // Set font for labels
+            ctx.font = `bold ${fontSize}px Arial`;
+            
+            // Draw name label (bên trái trên face box)
+            if (nameLabel) {
+                const nameWidth = ctx.measureText(nameLabel).width + labelPadding * 2;
+                
+                // Name background
+                ctx.fillStyle = boxColor;
+                ctx.fillRect(x1, y1 - labelHeight - labelMargin, nameWidth, labelHeight);
+                
+                // Name text
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText(nameLabel, x1 + labelPadding, y1 - labelMargin - labelPadding);
+            }
+            
+            // Draw emotion label (bên phải trên face box)
+            if (emotionLabel) {
+                const emotionWidth = ctx.measureText(emotionLabel).width + labelPadding * 2;
+                
+                // Position emotion label to the right of the face box
+                const emotionX = x2 - emotionWidth;
                 
                 // Use emotion-specific color if available
-                if (config.emotionColors[box.emotion]) {
-                    ctx.fillStyle = config.emotionColors[box.emotion];
-                } else {
-                    ctx.fillStyle = config.emotionColor;
-                }
-            } else {
-                ctx.fillStyle = config.faceColor;
-            }
-            
-            // Only draw label if we have something to show
-            if (labelParts.length > 0) {
-                // Set font size for label
-                ctx.font = `bold ${fontSize}px Arial`;
+                const emotionColor = config.emotionColors[box.emotion] || config.emotionColor;
                 
-                const label = labelParts.join(' - ');
-                const textWidth = ctx.measureText(label).width + labelPadding * 2;
+                // Emotion background
+                ctx.fillStyle = emotionColor;
+                ctx.fillRect(emotionX, y1 - labelHeight - labelMargin, emotionWidth, labelHeight);
                 
-                // Create label background (position above the face box)
-                ctx.fillRect(x1, y1 - labelHeight - labelMargin, textWidth, labelHeight);
-                
-                // Draw text
+                // Emotion text
                 ctx.fillStyle = '#FFFFFF';
-                ctx.fillText(label, x1 + labelPadding, y1 - labelMargin - labelPadding);
+                ctx.fillText(emotionLabel, emotionX + labelPadding, y1 - labelMargin - labelPadding);
             }
         });
     }

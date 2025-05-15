@@ -7,11 +7,6 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-        <div>Đang khởi động hệ thống...</div>
-    </div>
-
     <div class="header">
         <h1>Hệ Thống Nhận Diện Người & Khuôn Mặt</h1>
         <p class="subtitle">Sử dụng mô hình YOLO với xử lý thời gian thực</p>
@@ -30,6 +25,10 @@
                 <div class="stat-item">
                     <span class="stat-label">Số khuôn mặt:</span>
                     <span class="stat-value" id="faceCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Khuôn mặt đã nhận diện:</span>
+                    <span class="stat-value" id="recognizedCount">0</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">FPS:</span>

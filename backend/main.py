@@ -12,7 +12,7 @@ from database.face_recognizer import FaceRecognizer
 
 app = FastAPI()
 detector = Detector()
-face_recognizer = FaceRecognizer()
+face_recognizer = FaceRecognizer()  # Thêm dòng này
 
 # CORS settings
 app.add_middleware(
@@ -33,6 +33,53 @@ async def process_frame(file: UploadFile = File(...)):
     # Xử lý khung hình / Process the frame
     person_count, face_count, person_boxes, face_boxes = detector.process_frame(frame)
     
+    # Nhận diện khuôn mặt nếu có faces được detect
+    face_boxes_with_recognition = []
+    
+    if face_count > 0:
+        # Gọi face recognition cho toàn bộ frame
+        recognition_results = face_recognizer.recognize_from_image(frame, top_k=1)
+        
+        # THÊM DEBUG LOG TẠI ĐÂY
+        print(f"Recognition results: {recognition_results}")
+        
+        # Kết hợp detection results với recognition results
+        for i, (coords, conf, emotion, embedding) in enumerate(face_boxes):
+            # Tìm recognition result tương ứng với face này
+            recognition_info = None
+            if i < len(recognition_results) and recognition_results[i]['matches']:
+                best_match = recognition_results[i]['matches'][0]
+                recognition_info = {
+                    "name": best_match['metadata'].get('name', 'Unknown'),
+                    "similarity": best_match['similarity'],
+                    "is_known": True
+                }
+            else:
+                recognition_info = {
+                    "name": "Unknown",
+                    "similarity": 0.0,
+                    "is_known": False
+                }
+            
+            face_boxes_with_recognition.append({
+                "coords": coords,
+                "confidence": conf,
+                "emotion": emotion,
+                "recognition": recognition_info
+            })
+    else:
+        # Không có face nào, convert face_boxes sang format mới
+        for coords, conf, emotion, embedding in face_boxes:
+            face_boxes_with_recognition.append({
+                "coords": coords,
+                "confidence": conf,
+                "emotion": emotion,
+                "recognition": {"name": "Unknown", "similarity": 0.0, "is_known": False}
+            })
+    
+    # THÊM DEBUG LOG TẠI ĐÂY
+    print(f"Face boxes with recognition: {face_boxes_with_recognition}")
+    
     # Trả về kết quả / Return results
     return {
         "persons": person_count,
@@ -41,12 +88,8 @@ async def process_frame(file: UploadFile = File(...)):
             {"coords": coords, "confidence": conf}
             for (coords, conf) in person_boxes
         ],
-        "face_boxes": [
-            {"coords": coords, "confidence": conf, "emotion": emotion}
-            for (coords, conf, emotion, _) in face_boxes
-        ]
+        "face_boxes": face_boxes_with_recognition
     }
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -100,4 +143,3 @@ async def register_folder(folder_path: str = Form(...)):
         "success_count": success_count,
         "fail_count": fail_count
     }
-
